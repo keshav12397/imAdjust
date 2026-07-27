@@ -5,14 +5,15 @@ A small package to deal with .nd2 files from the slide scanner.
 ## Installation
 
 ```bash
-git clone 
+git clone https://github.com/keshav12397/imAdjust.git
+cd ./imAdjust
 pip install -e .
 ```
 
 ## Usage
 
 ```bash
-imadjust -i "D:\Choc27_F\one_in" -o "D:\Choc27_F\one_out"
+imadjust -i "D:\Choc27_F\one_in" -o "D:\Choc27_F\one_out" -down 2
 ```
 
 ## Options
@@ -25,5 +26,6 @@ imadjust -i "D:\Choc27_F\one_in" -o "D:\Choc27_F\one_out"
 
 
 ## Requirements
+
 - Python ≥ 3.8
 - nd2, opencv-python, scipy, numpy, pandas, matplotlib, tqdm

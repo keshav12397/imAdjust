@@ -3,3 +3,5 @@
 *.ipynb
 *.tiff
 __pycache__/
+!example_output/
+!example_output/**/*.png

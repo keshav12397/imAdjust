@@ -26,7 +26,9 @@ imadjust -i "D:\Choc27_F\one_in" -o "D:\Choc27_F\one_out" -down 2
 
 ## Description
 
-The slide scanner outputs all images into a folder with a random name (i.e. `/20260724_190203_378`). You want to put this into a parent folder with the name of the bird (i.e. `/Choc27_F/20260724_190203_378`) and pass the bird directory as input. This will handle the case where you split up imaging a bird over multiple slide scanner runs.
+The slide scanner outputs all images into a folder with a random name (i.e. `/20260724_190203_378`). You want to put this into a parent folder with the name of the bird (i.e. `/Choc27_F/20260724_190203_378`) and pass the bird directory as input. This will handle the case where you split up imaging a bird over multiple slide scanner runs. 
+
+You also need to make sure the output directory exists (i.e. `/Choc27_F/processed`) or else it will complain. 
 
 This will then traverse through all files, first pull out all the prescans, outline the ROIs that were automatically detected and their numbers, and stack them to save one image.
 

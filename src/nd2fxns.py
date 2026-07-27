@@ -9,6 +9,15 @@ from scipy import ndimage
 import traceback
 import re 
 
+#given a parsed LED wavelength convert to RGB 
+COLORMAPDICT = {
+    395:  [255,255,255],  #DAPI is greyscale
+    470: [0,255,0], #488 is green
+    555: [255,0,0], #555 is red
+    640: [255,0,255] #640 is magenta
+    }
+
+
 
 def organizeFiles(animalDir):
     '''
@@ -124,30 +133,18 @@ def chanMetaToRGB(chanmeta):
     if not isinstance(chanmeta,list):
         raise ValueError('chan meta must be a list from the meta ! ')
     
-    holdidx = []
-    holdrgbarr = []
+    holdwavelengths = []
     for channel_str in chanmeta:
-        channel_str = str(channel_str)
-        index_match = re.search(r"\bindex=(\d+)", channel_str)
-        color_match = re.search(
-            r"Color\(r=(\d+),\s*g=(\d+),\s*b=(\d+)",
-            channel_str,
-        )
+        ##ignore all this regex stuff and just parse the wavelength from the channel name, then use the colormapdict to get RGB
+        wavelength_match = re.search(r"(\d+)\s*nm", channel_str)
 
-        if index_match is None or color_match is None:
-            raise ValueError("Could not parse channel index or color.")
+        if wavelength_match is None:
+            raise ValueError("Could not parse wavelength from channel string.")
 
-        channel_index = int(index_match.group(1))
-        r, g, b = map(int, color_match.groups())
-        rgbarr = np.array([r,g,b],dtype = int)
+        holdwavelengths.append(int(wavelength_match.group(1)))
 
-        holdidx.append(int(channel_index))
-        holdrgbarr.append(rgbarr)
-
-    useord = np.argsort(holdidx)
-    finRGB_arr = np.c_[holdrgbarr][useord,:]
-    finRGB_arr[-1,:]  = [255,255,255] ##im setting DAPI to grey scale i think itll look inice 
-    
+    #get colors in the order that the wavelenghts were found in the channel metadata, default to black if wavelength not found
+    finRGB_arr = np.array([COLORMAPDICT.get(wl, [0, 0, 0]) for wl in holdwavelengths],dtype = int)  
     ##norm 0-1
     finRGB_arr = finRGB_arr/255
     return finRGB_arr.astype(np.uint16)
@@ -241,10 +238,10 @@ def doClaheMulti(imgPath,downFct:int=1,saveDir:Path = Path.cwd()):
         img_small = cv2.resize(composite_bgr, (w // downFct, h // downFct), interpolation=cv2.INTER_AREA)
 
 
-        #usename = renameSection(imgPath.name)### Fix renaming the thing 
+        usename = renameSection(imgPath.name)### Fix renaming the thing 
         
         os.makedirs(saveDir, exist_ok=True)
-        success = cv2.imwrite(saveDir/imgPath.name.replace('.nd2','.png'), img_small)
+        success = cv2.imwrite(saveDir/usename, img_small)
         return img_small
     except Exception:
         print(f"\nError processing file:\n{imgPath}")
@@ -340,12 +337,3 @@ def compareClaheSingChan(imgPath,saveDir: Path = Path.cwd()):
     success = cv2.imwrite(saveDir/usename, img_small,[cv2.IMWRITE_TIFF_COMPRESSION, 1])
     
     return success,img_small
-
-
-
-
-
-
-
-
-      

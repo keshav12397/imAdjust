@@ -1,3 +1,6 @@
+import os
+
+import argparse
 import nd2
 import cv2
 from pathlib import Path
@@ -5,12 +8,28 @@ import matplotlib.pyplot as plt
 import numpy as np
 from scipy import ndimage
 import traceback
-import re 
+import re
+import tqdm
+
+
+#given a parsed LED wavelength convert to RGB 
+COLORMAPDICT = {
+    395:  [255,255,255],  #DAPI is greyscale
+    470: [0,255,0], #488 is green
+    555: [255,0,0], #555 is red
+    640: [255,0,255] #640 is magenta
+    }
 
 
 def organizeFiles(animalDir):
     '''
     Inefficient way to organize the individual sections with their prescan. im sure i could do something faster w regex but this will not be the ratelimiting step 
+
+    Input:
+    animalDir: Path to the directory containing all slidescanner output folders for this animal 
+
+    Returns:
+    useDict: Dictionary where keys are prescan nd2 filepaths and values are lists of corresponding section nd2 filepaths
     '''
 
     holdPath = []
@@ -20,7 +39,7 @@ def organizeFiles(animalDir):
         if 'reimage' not in dir: ##skip reimage directory for now 
             for file in files:
                 if "Region" not in file: # these are all the prescan files 
-                    assert 'Channel395' in file #just make sure this was using DAPI
+                    assert 'Channel395' in file, 'prescan was not done w DAPI' #just make sure this was using DAPI, can comment out in the case where other channels were used for prescan
                     holdPath.append(root/file)
                     kms = file.split("_")[0]
                     thisCart = kms.split("-")[0].replace('Slide',"")
@@ -47,6 +66,19 @@ def organizeFiles(animalDir):
     return useDict
 
 def doPrescan(prescanPath):
+    '''
+    Given the path to the prescan nd2 file, return the prescan image, the binary mask, the median coordinates of each ROI, and the voxel size in microns. pass these to the next function to make the full prescan plot.
+
+    Input:
+    prescanPath: Path to the prescan nd2 file
+
+    Returns:
+    img: 2D numpy array of the prescan image
+    mask2: 2D numpy array of the binary mask    
+    hold_roi_med: Dictionary of median coordinates for each ROI
+    voxFct: Voxel size in microns
+
+    '''
     with nd2.ND2File(prescanPath) as ndfile:
         vox = ndfile.voxel_size()
         assert vox.x == vox.y 
@@ -73,8 +105,14 @@ def doPrescan(prescanPath):
      
     return img, mask2, hold_roi_med , voxFct
 
-def plotPrescanALL(preScanOutputList,savePath:Path = Path.cwd()):
+def plotPrescanALL(preScanOutputList,savePath:Path):
+    '''
+    Given a list of outputs from the doPrescan function
 
+    Input:
+    preScanOutputList: List of tuples, where each tuple contains (img, mask2, hold_roi_med, voxFct) for a prescan
+    savePath: Path to save the output plot.  filename is hardcoded as  '_allPreScans.png'
+    '''
     #stack all slides to plot 
     allImg = np.vstack([x[0] for x in preScanOutputList])
     allMask = np.vstack([x[1] for x in preScanOutputList])
@@ -112,47 +150,43 @@ def plotPrescanALL(preScanOutputList,savePath:Path = Path.cwd()):
         start += end
 
     ax.axis('off')
-    fig.savefig(savePath/'allPreScans.png',dpi = 300,bbox_inches = 'tight') ##reduce DPI? idk
+    fig.savefig(savePath/'_allPreScans.png',dpi = 300,bbox_inches = 'tight') ##reduce DPI? idk
     plt.close(fig)
 
 def chanMetaToRGB(chanmeta):
     '''
     chatgptted regex, parses the channels list in the metadata to build array of RGB colors to use for each channel 
+
+    Input:
+    chanmeta: List of channel metadata strings from the nd2 file.
+    
+    Returns:
+    finRGB_arr (nChan x 3): Numpy array of RGB colors corresponding to each channel, normalized to the range [0, 1] and converted to uint16.
     '''
     if not isinstance(chanmeta,list):
         raise ValueError('chan meta must be a list from the meta ! ')
     
-    holdidx = []
-    holdrgbarr = []
+    holdwavelengths = []
     for channel_str in chanmeta:
+        ##ignore all this regex stuff and just parse the wavelength from the channel name, then use the colormapdict to get RGB
         channel_str = str(channel_str)
-        index_match = re.search(r"\bindex=(\d+)", channel_str)
-        color_match = re.search(
-            r"Color\(r=(\d+),\s*g=(\d+),\s*b=(\d+)",
-            channel_str,
-        )
+        wavelength_match = re.search(r"(\d+)\s*nm", channel_str)
 
-        if index_match is None or color_match is None:
-            raise ValueError("Could not parse channel index or color.")
+        if wavelength_match is None:
+            raise ValueError("Could not parse wavelength from channel string.")
 
-        channel_index = int(index_match.group(1))
-        r, g, b = map(int, color_match.groups())
-        rgbarr = np.array([r,g,b],dtype = int)
+        holdwavelengths.append(int(wavelength_match.group(1)))
 
-        holdidx.append(int(channel_index))
-        holdrgbarr.append(rgbarr)
-
-    useord = np.argsort(holdidx)
-    finRGB_arr = np.c_[holdrgbarr][useord,:]
-    finRGB_arr[-1,:]  = [255,255,255] ##im setting DAPI to grey scale i think itll look inice 
-    
+    #get colors in the order that the wavelenghts were found in the channel metadata, default to black if wavelength not found
+    finRGB_arr = np.array([COLORMAPDICT.get(wl, [0, 0, 0]) for wl in holdwavelengths],dtype = int)  
     ##norm 0-1
     finRGB_arr = finRGB_arr/255
     return finRGB_arr.astype(np.uint16)
     
 def renameSection(name:str):
     '''
-    Get rid of all the extra slop in the Nd2 filenames 
+    Get rid of all the extra slop in the Nd2 filenames. Final name is Cas{cassette number}_Slide{slide number}_Section{section number}.png
+
     '''
     p1 = name.split('_')[0]
     cassNum =p1.split("-")[0].replace('Slide',"")
@@ -165,7 +199,7 @@ def renameSection(name:str):
 
     return newname
 
-def doClaheMulti(imgPath,downFct:int=1,saveDir:Path = Path.cwd()):
+def doClaheMulti(imgPath,saveDir:Path,downFct:int):
 
     try: 
         with nd2.ND2File(imgPath) as ndfile:
@@ -176,16 +210,12 @@ def doClaheMulti(imgPath,downFct:int=1,saveDir:Path = Path.cwd()):
 
             if ndfile.size < 0.15e9:
                 return 
-
-        clipArr = np.array([
-            [0.001, 0.998],
-            [0.001, 0.998],
-            [0.001, 0.998],
-        ])
+        
+        nChans = imgArr.shape[0]
+        clipArr = np.array([[0.001, 0.998]]*nChans)  ##this is the quantile to clip the image to for each channel, i should make this a parameter
 
         assert imgArr.shape[0] == rbgArr.shape[0] == clipArr.shape[0]
 
-        nChans = imgArr.shape[0]
 
         clahe = cv2.createCLAHE(
             clipLimit=8.0, #higher number is more aggressive 
@@ -193,7 +223,15 @@ def doClaheMulti(imgPath,downFct:int=1,saveDir:Path = Path.cwd()):
             
         )
 
-        enhanced_channels = []
+        # Convert RGB definitions from 0–255 to 0–1 weights
+        rgb_weights = np.asarray(rbgArr, dtype=np.float32) #/ 255.0
+
+        # Use float for accumulation to prevent uint16 overflow
+        compRGB = np.zeros(
+            (*imgArr.shape[1:], 3),
+            dtype=np.float32,
+        )
+
         for c in range(nChans):
             sub = imgArr[c].astype(np.uint16)
 
@@ -217,22 +255,9 @@ def doClaheMulti(imgPath,downFct:int=1,saveDir:Path = Path.cwd()):
             sub_scaled *= np.iinfo(np.uint16).max
             sub_scaled = sub_scaled.astype(np.uint16)
 
-            enhanced_channels.append(sub_scaled)
-
-        # Shape: (channels, height, width)
-        finArr = np.stack(enhanced_channels, axis=0)
-
-        # Convert RGB definitions from 0–255 to 0–1 weights
-        rgb_weights = np.asarray(rbgArr, dtype=np.float32) #/ 255.0
-
-        # Use float for accumulation to prevent uint16 overflow
-        compRGB = np.zeros(
-            (*finArr.shape[1:], 3),
-            dtype=np.float32,
-        )
-
-        for channel, rgb_color in zip(finArr, rgb_weights):
-            compRGB += channel[..., None] * rgb_color
+            compRGB[:,:,:] += sub_scaled[..., None] * rgb_weights[c,:]
+        del rgb_weights, sub_scaled, sub_clahe, sub  # Free memory
+        del imgArr  # Free memory
 
         # Prevent overlapping channels from exceeding uint16
         compRGB = np.clip(
@@ -249,17 +274,16 @@ def doClaheMulti(imgPath,downFct:int=1,saveDir:Path = Path.cwd()):
 
 
         usename = renameSection(imgPath.name)### Fix renaming the thing 
-
-
-        success = cv2.imwrite(saveDir/usename, composite_bgr)
-        return composite_bgr
+        
+        os.makedirs(saveDir, exist_ok=True)
+        success = cv2.imwrite(saveDir/usename, img_small)
+        return img_small
     except Exception:
         print(f"\nError processing file:\n{imgPath}")
         print(f"Requested save directory:\n{saveDir}")
         traceback.print_exc()
         raise
         
-
 def compareClaheSingChan(imgPath,saveDir: Path = Path.cwd()):
     '''
     Plot single channel normal and CLAHE top and bottom to compare 
@@ -348,11 +372,47 @@ def compareClaheSingChan(imgPath,saveDir: Path = Path.cwd()):
     
     return success,img_small
 
+def processOneAnimal(animalDir:Path,saveDir:Path,downFct:int = 2):
+    '''
+    Main function to organize files, process prescans, and generate plots.
 
+    Input:
+    animalDir: Path to the directory containing all slidescanner output folders for this animal
+    saveDir: Path to save the output plots. Default is current working directory.
+    '''
+    useDict = organizeFiles(animalDir)
+    
+    preScanOutputList = []
+    for prescanPath, regionPaths in tqdm.tqdm(useDict.items(),desc="Processing prescans"):
+        img, mask2, hold_roi_med, voxFct = doPrescan(prescanPath)
+        preScanOutputList.append((img, mask2, hold_roi_med, voxFct))
+    plotPrescanALL(preScanOutputList, saveDir)
 
+    allFiles =  []
+    for v in useDict.values():
+        allFiles.extend(v)
 
+    for kk in tqdm.tqdm(allFiles, desc="Processing all .ND2 files"):
+        doClaheMulti(kk, downFct=downFct, saveDir=saveDir)
 
+def main():
+    parser = argparse.ArgumentParser(
+        description="Process all .nd2 files from the slide scanner for one animal"
+    )
+    parser.add_argument(
+        "-i","--input_path", type=Path, help="Path to master directory holding all slidescanner output folders for one animal"
+    )
+    parser.add_argument(
+        "-o","--output_path", type=Path,
+        help="Directory to save output into"
+    )
+    parser.add_argument(
+        "-down", "--downFct", type=int, default=2,
+        help="Downsampling factor for the output images (default: 2)"
+    )
+    args = parser.parse_args()
+    processOneAnimal(animalDir=args.input_path, saveDir=args.output_path, downFct=args.downFct)
 
-
-
-      
+if __name__ == "__main__":
+    main()
+    

@@ -1,0 +1,16 @@
+Metadata-Version: 2.4
+Name: imAdjust
+Version: 0.1.0
+Summary: A small package to deal with .nd2 files from the slide scanner
+Author: Keshav B. Suresh
+Requires-Python: >=3.8
+Description-Content-Type: text/markdown
+Requires-Dist: nd2
+Requires-Dist: opencv-python
+Requires-Dist: scipy
+Requires-Dist: numpy
+Requires-Dist: pandas
+Requires-Dist: matplotlib
+Requires-Dist: tqdm
+
+#imAdjust 

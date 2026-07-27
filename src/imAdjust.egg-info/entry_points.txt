@@ -1,0 +1,2 @@
+[console_scripts]
+imadjust = imAdjust.nd2fxns:main

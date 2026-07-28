@@ -6,7 +6,6 @@ import cv2
 from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
-from scipy import ndimage
 import traceback
 import re
 import tqdm
@@ -95,15 +94,9 @@ def doPrescan(prescanPath):
         hold_roi_med[r] = np.array([med[1],med[0]])
         # hold_roi_med.append((med[1],med[0])) ### convert this to microns ? I would just multiply the index by the voxFct, origin is always the top left ? 
 
-    #get edges from the binary mask 
-    mask2 = mask.astype(bool)
-    dx = ndimage.sobel(mask2,axis = 0)
-    dy = ndimage.sobel(mask2,axis = 1)
-    edged = np.hypot(dx,dy)
     
-    assert edged.shape == img.shape
      
-    return img, mask2, hold_roi_med , voxFct
+    return img, mask.astype(bool), hold_roi_med , voxFct
 
 def plotPrescanALL(preScanOutputList,savePath:Path):
     '''

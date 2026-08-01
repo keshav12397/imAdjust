@@ -34,7 +34,8 @@ def organizeFiles(animalDir):
     holdPath = []
     holdCart = []
     holdSlide = []
-    for root,dir, files in animalDir.walk():
+    for root,dir, files in os.walk(animalDir):
+        root = Path(root)
         if 'reimage' not in dir: ##skip reimage directory for now 
             for file in files:
                 if "Region" not in file: # these are all the prescan files 
@@ -55,7 +56,8 @@ def organizeFiles(animalDir):
         searchStr = thisPre.name.split("_")[0]
 
         holdregion = []
-        for root,dir,files in animalDir.walk():
+        for root,dir,files in os.walk(animalDir):
+            root = Path(root)
             for file in files:
                 if file.startswith(searchStr) and "Region" in file: ##dont double include prescan here 
                     holdregion.append(root/file)
